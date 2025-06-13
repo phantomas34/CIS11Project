@@ -1,0 +1,179 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2761
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0         .ORIG x3000\
+\
+;=======================\
+; Data Section (moved up to fix LEA range limits)\
+;=======================\
+PROMPT          .STRINGZ "Enter text (ENTER to finish): "\
+FORMAT_PROMPT   .STRINGZ "\\n1 = Binary, 2 = Decimal, 3 = Hex: "\
+HEADER          .STRINGZ "\\nChar : Freq\\n"\
+NEWLINE         .FILL #-10\
+ASCII_SIZE      .FILL #128\
+SPACE           .FILL #32\
+COLON           .FILL #58\
+ASCII_MASK      .FILL x007F\
+MIN_PRINTABLE   .FILL #32\
+MAX_PRINTABLE   .FILL #127\
+\
+FREQUENCIES     .BLKW #128\
+STACK           .BLKW #32\
+\
+;=======================\
+; Program Start\
+;=======================\
+        LEA R6, STACK          ; Initialize stack pointer\
+        LEA R0, PROMPT         ; Print prompt\
+        JSR PRINT_STRING\
+\
+        ;----- Clear frequency table -----\
+        JSR CLEAR_FREQ\
+\
+INPUT_LOOP\
+        TRAP x20               ; Read a character (GETC)\
+        BRz  DONE_INPUT        ; Stop on null (for safety)\
+        LD  R1, NEWLINE\
+        ADD R2, R0, R1\
+        BRz DONE_INPUT         ; Stop on ENTER (newline)\
+\
+        JSR UPDATE_FREQ        ; Update frequency\
+\
+        BR  INPUT_LOOP\
+\
+DONE_INPUT\
+        ; Ask for display format\
+        LEA R0, FORMAT_PROMPT\
+        JSR PRINT_STRING\
+\
+        TRAP x20               ; Read format selection (not used yet)\
+\
+        ; Print header\
+        LEA R0, HEADER\
+        JSR PRINT_STRING\
+\
+        ; Display frequencies\
+        JSR DISPLAY_FREQ\
+\
+        HALT\
+\
+;=======================\
+; Subroutine: PRINT_STRING\
+;=======================\
+PRINT_STRING\
+        ADD R6, R6, #-1        ; PUSH R1\
+        STR R1, R6, #0\
+PRINT_CHAR\
+        LDR R1, R0, #0\
+        BRz PRINT_DONE\
+        OUT\
+        ADD R0, R0, #1\
+        BR PRINT_CHAR\
+PRINT_DONE\
+        LDR R1, R6, #0         ; POP R1\
+        ADD R6, R6, #1\
+        RET\
+\
+;=======================\
+; Subroutine: CLEAR_FREQ\
+;=======================\
+CLEAR_FREQ\
+        ADD R6, R6, #-2        ; PUSH R1, R2\
+        STR R1, R6, #0\
+        STR R2, R6, #1\
+        LEA R1, FREQUENCIES\
+        LD  R2, ASCII_SIZE\
+CLEAR_LOOP\
+        AND R3, R3, #0\
+        STR R3, R1, #0\
+        ADD R1, R1, #1\
+        ADD R2, R2, #-1\
+        BRp CLEAR_LOOP\
+        LDR R2, R6, #1         ; POP R2\
+        LDR R1, R6, #0         ; POP R1\
+        ADD R6, R6, #2\
+        RET\
+\
+;=======================\
+; Subroutine: UPDATE_FREQ\
+; R0 = char input\
+;=======================\
+UPDATE_FREQ\
+        ADD R6, R6, #-3        ; PUSH R1, R2, R5\
+        STR R1, R6, #0\
+        STR R2, R6, #1\
+        STR R5, R6, #2\
+\
+        LD R5, ASCII_MASK      ; Load x7F (mask)\
+        AND R0, R0, R5         ; Ensure ASCII in 0\'96127\
+\
+        LEA R1, FREQUENCIES\
+        ADD R1, R1, R0         ; Address = base + ASCII code\
+        LDR R2, R1, #0\
+        ADD R2, R2, #1\
+        STR R2, R1, #0\
+\
+        LDR R5, R6, #2         ; POP R5\
+        LDR R2, R6, #1         ; POP R2\
+        LDR R1, R6, #0         ; POP R1\
+        ADD R6, R6, #3\
+        RET\
+\
+;=======================\
+; Subroutine: DISPLAY_FREQ\
+;=======================\
+DISPLAY_FREQ\
+        ADD R6, R6, #-4        ; PUSH R1, R2, R3, R4\
+        STR R1, R6, #0\
+        STR R2, R6, #1\
+        STR R3, R6, #2\
+        STR R4, R6, #3\
+\
+        LEA R1, FREQUENCIES\
+        LD  R2, ASCII_SIZE\
+        AND R0, R0, #0         ; Start at ASCII 0\
+\
+DISP_LOOP\
+        LDR R3, R1, #0         ; R3 = frequency\
+        BRz SKIP_ZERO\
+\
+        ; Skip non-printable chars (<32)\
+        LD R4, MIN_PRINTABLE\
+        NOT R4, R4\
+        ADD R4, R4, #1         ; -MIN_PRINTABLE\
+        ADD R5, R0, R4         ; R5 = R0 - 32\
+        BRn SKIP_ZERO\
+\
+        ; Skip non-printable chars (>126)\
+        LD R4, MAX_PRINTABLE\
+        NOT R4, R4\
+        ADD R5, R0, R4         ; R5 = R0 - 127\
+        BRzp SKIP_ZERO\
+\
+        ADD R4, R0, #0\
+        OUT                    ; Print char\
+        LD R4, COLON\
+        OUT\
+        LD R4, SPACE\
+        OUT\
+        ; Optional: Add number display here\
+\
+SKIP_ZERO\
+        ADD R1, R1, #1\
+        ADD R0, R0, #1\
+        ADD R2, R2, #-1\
+        BRp DISP_LOOP\
+\
+        LDR R4, R6, #3         ; POP R4\
+        LDR R3, R6, #2         ; POP R3\
+        LDR R2, R6, #1         ; POP R2\
+        LDR R1, R6, #0         ; POP R1\
+        ADD R6, R6, #4\
+        RET\
+\
+        .END\
+}
